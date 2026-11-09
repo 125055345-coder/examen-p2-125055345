@@ -1,0 +1,57 @@
+# Pipeline DataMart: hadoop (procesa) -> db (guarda) -> api (expone)
+# Levantar todo:  docker compose up --build
+
+services:
+
+  hadoop:
+    build: ./hadoop
+    hostname: hadoop
+    volumes:
+      - ./ventas_125055345.csv:/data/input/ventas_125055345.csv:ro   # dataset, solo lectura
+      - ./mapreduce:/mapreduce        # mapper/reducer: se editan en el host sin reconstruir la imagen
+      - ./salida:/data/output         # salida del job, visible tambien desde el host
+      - llaves_ssh:/llaves            # aqui se deja la llave para que api entre por SSH
+    networks:
+      - datamart_net
+
+  db:
+    image: postgres:16
+    env_file: .env                    # POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+    volumes:
+      - pgdata:/var/lib/postgresql/data   # volumen nombrado: los datos sobreviven a "down"
+    healthcheck:
+      # $$ evita que compose sustituya la variable; la expande el shell dentro del contenedor.
+      # -h localhost obliga a usar TCP, asi no da "listo" durante la inicializacion interna.
+      test: ["CMD-SHELL", "pg_isready -h localhost -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - datamart_net
+
+  api:
+    build: ./api
+    env_file: .env
+    environment:
+      DB_HOST: db                     # nombre del servicio de la base de datos
+    ports:
+      - "${API_PORT:-8000}:5000"      # puerto_del_host:puerto_del_contenedor
+    volumes:
+      - ./scripts:/scripts:ro         # cargar_resultados.py
+      - ./salida:/data/output:ro      # para leer part-00000
+      - llaves_ssh:/llaves:ro         # llave privada para "ssh root@hadoop"
+    depends_on:
+      db:
+        condition: service_healthy    # espera a que el healthcheck de db pase
+      hadoop:
+        condition: service_started
+    networks:
+      - datamart_net
+
+networks:
+  datamart_net:
+    driver: bridge
+
+volumes:
+  pgdata:
+  llaves_ssh:

@@ -1,0 +1,7 @@
+# Dataset (~400 MB): se genera con scripts/generar_dataset.py, no se sube
+*.csv
+# Credenciales reales (se sube solo .env.example)
+.env
+# Salida de Hadoop: se regenera al correr el job
+salida/
+__pycache__/
